@@ -10,4 +10,4 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Ping Streamlit app
-        run: curl -I -L --max-time 30 "https://YOUR-APP-URL.streamlit.app" || true
+        run: curl -I -L --max-time 30 "talk-trace-ai-osdisgdz5t4yszzxecybbv.streamlit.app" || true
