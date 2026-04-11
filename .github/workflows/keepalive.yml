@@ -2,9 +2,13 @@ name: Keep Streamlit App Awake
 
 on:
   schedule:
-    # Every 10 minutes
-    - cron: "*/10 * * * *"
+    # Every 5 minutes (GitHub Actions minimum granularity)
+    - cron: "*/5 * * * *"
   workflow_dispatch:
+
+concurrency:
+  group: keep-alive-streamlit
+  cancel-in-progress: true
 
 jobs:
   ping:
