@@ -27,9 +27,27 @@ jobs:
         env:
           STREAMLIT_APP_URL: ${{ secrets.STREAMLIT_APP_URL }}
         run: |
-          set -e
+          set +e
           echo "Pinging: $STREAMLIT_APP_URL"
-          curl -L --fail --retry 3 --retry-all-errors --max-time 30 \
+
+          HTTP_CODE=$(curl -L --retry 3 --retry-all-errors --max-time 30 \
             -A "github-actions-keepalive/1.0" \
-            "$STREAMLIT_APP_URL" > /dev/null
-          echo "Ping success"
+            -o /dev/null -w "%{http_code}" \
+            "$STREAMLIT_APP_URL")
+          CURL_EXIT=$?
+
+          if [ "$CURL_EXIT" -ne 0 ]; then
+            echo "Keep-alive ping warning: curl exited with code $CURL_EXIT."
+            echo "This run will not fail to avoid noisy alert emails."
+            exit 0
+          fi
+
+          echo "Keep-alive ping response HTTP $HTTP_CODE"
+          if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 500 ]; then
+            echo "Ping completed (service reachable)."
+            exit 0
+          fi
+
+          echo "Keep-alive ping warning: HTTP $HTTP_CODE"
+          echo "This run will not fail to avoid noisy alert emails."
+          exit 0
