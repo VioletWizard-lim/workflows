@@ -18,36 +18,51 @@ jobs:
         env:
           STREAMLIT_APP_URL: ${{ secrets.STREAMLIT_APP_URL }}
         run: |
-          if [ -z "$STREAMLIT_APP_URL" ]; then
-            echo "STREAMLIT_APP_URL secret is not set. Skipping keep-alive ping."
-            exit 0
+          set -euo pipefail
+
+          if [ -z "${STREAMLIT_APP_URL:-}" ]; then
+            echo "::error::STREAMLIT_APP_URL secret is not set."
+            echo "Set Repository secret STREAMLIT_APP_URL to your app URL (e.g. https://your-app.streamlit.app)."
+            exit 1
           fi
 
-      - name: Ping Streamlit app
+          case "$STREAMLIT_APP_URL" in
+            http://*|https://*)
+              ;;
+            *)
+              echo "::error::STREAMLIT_APP_URL must start with http:// or https://."
+              exit 1
+              ;;
+          esac
+
+      - name: Ping Streamlit app and detect sleep page
         env:
           STREAMLIT_APP_URL: ${{ secrets.STREAMLIT_APP_URL }}
         run: |
-          set +e
+          set -euo pipefail
+
+          BODY_FILE=$(mktemp)
           echo "Pinging: $STREAMLIT_APP_URL"
 
-          HTTP_CODE=$(curl -L --retry 3 --retry-all-errors --max-time 30 \
-            -A "github-actions-keepalive/1.0" \
-            -o /dev/null -w "%{http_code}" \
+          HTTP_CODE=$(curl -sS -L --retry 3 --retry-all-errors --max-time 30 \
+            -A "Mozilla/5.0 (compatible; streamlit-keepalive/1.0; +https://github.com/${{ github.repository }})" \
+            -H "Cache-Control: no-cache" \
+            -H "Pragma: no-cache" \
+            -o "$BODY_FILE" -w "%{http_code}" \
             "$STREAMLIT_APP_URL")
           CURL_EXIT=$?
 
-          if [ "$CURL_EXIT" -ne 0 ]; then
-            echo "Keep-alive ping warning: curl exited with code $CURL_EXIT."
-            echo "This run will not fail to avoid noisy alert emails."
-            exit 0
-          fi
-
           echo "Keep-alive ping response HTTP $HTTP_CODE"
-          if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 500 ]; then
-            echo "Ping completed (service reachable)."
-            exit 0
+
+          if [ "$HTTP_CODE" -ge 500 ]; then
+            echo "::error::Server returned HTTP $HTTP_CODE"
+            exit 1
           fi
 
-          echo "Keep-alive ping warning: HTTP $HTTP_CODE"
-          echo "This run will not fail to avoid noisy alert emails."
-          exit 0
+          if grep -qi "This app has gone to sleep due to inactivity" "$BODY_FILE"; then
+            echo "::error::Sleep page detected. Automated request reached Streamlit's sleep interstitial instead of a live app."
+            echo "Streamlit may require a manual wake-up or a different external monitor endpoint."
+            exit 1
+          fi
+
+          echo "Ping completed (service reachable and not on sleep interstitial)."
