@@ -1,84 +1,28 @@
-name: Keep Streamlit App Awake
+name: Keep Streamlit App Awake (Empty Commit)
 
 on:
   schedule:
-    # 매 5분마다 실행 (서버 혼잡을 피하기 위해 2분부터 시작)
-    - cron: "2-59/5 * * * *"
-  workflow_dispatch:
-    inputs:
-      streamlit_app_url:
-        description: "Optional override URL for manual runs"
-        required: false
-        type: string
-
-concurrency:
-  group: keep-alive-streamlit
-  cancel-in-progress: true
+    # 12시간마다 한 번씩 실행 (Streamlit의 12~24시간 수면 주기 방어)
+    - cron: "0 */12 * * *"
+  workflow_dispatch: # 수동 실행 버튼
 
 jobs:
-  ping:
+  keep-alive:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # 커밋을 푸시하기 위한 쓰기 권한
     steps:
-      - name: Resolve target URL
-        env:
-          INPUT_URL: ${{ github.event.inputs.streamlit_app_url }}
-          SECRET_URL: ${{ secrets.STREAMLIT_APP_URL }}
-          VAR_URL: ${{ vars.STREAMLIT_APP_URL }}
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Create empty commit
         run: |
-          set -euo pipefail
-
-          TARGET_URL="${INPUT_URL:-}"
-          if [ -z "$TARGET_URL" ]; then
-            TARGET_URL="${SECRET_URL:-}"
-          fi
-          if [ -z "$TARGET_URL" ]; then
-            TARGET_URL="${VAR_URL:-}"
-          fi
-
-          if [ -z "$TARGET_URL" ]; then
-            echo "::error::Target URL is missing. Provide one of:"
-            echo "1) Secret STREAMLIT_APP_URL (recommended for schedule)"
-            echo "2) Repository variable STREAMLIT_APP_URL"
-            echo "3) workflow_dispatch input streamlit_app_url for manual run"
-            exit 1
-          fi
-
-          case "$TARGET_URL" in
-            http://*|https://*)
-              ;;
-            *)
-              echo "::error::Target URL must start with http:// or https://."
-              exit 1
-              ;;
-          esac
-
-          echo "TARGET_URL=$TARGET_URL" >> "$GITHUB_ENV"
-
-      - name: Ping Streamlit app and detect sleep page
-        run: |
-          set -euo pipefail
-
-          BODY_FILE=$(mktemp)
-          echo "Pinging: $TARGET_URL"
-
-          # 쿠키 저장/읽기 및 일반 브라우저 User-Agent 적용
-          HTTP_CODE=$(curl -sS -L -c cookies.txt -b cookies.txt --retry 3 --retry-all-errors --max-time 30 \
-            -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
-            -H "Cache-Control: no-cache" \
-            -H "Pragma: no-cache" \
-            -o "$BODY_FILE" -w "%{http_code}" \
-            "$TARGET_URL")
-
-          echo "Keep-alive ping response HTTP $HTTP_CODE"
-
-          if [ "$HTTP_CODE" -ge 500 ]; then
-            echo "::error::Server returned HTTP $HTTP_CODE"
-            exit 1
-          fi
-
-          if grep -qi "This app has gone to sleep due to inactivity" "$BODY_FILE"; then
-            echo "::error::Sleep page detected. Automated request reached Streamlit's sleep interstitial instead of a live app."
-            echo "Streamlit may require a manual wake-up or a different external monitor endpoint."
-            exit 1
-          fi
-          echo "Ping completed (service reachable and not on sleep interstitial)."
+          # 봇 이름으로 Git 계정 설정
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # 내용이 없는 빈 커밋 생성 (에러 방지를 위해 allow-empty 옵션 사용)
+          git commit --allow-empty -m "chore: keep streamlit app awake"
+          
+          # GitHub으로 푸시
+          git push
